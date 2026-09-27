@@ -1,7 +1,7 @@
 // Service Worker — Controle de Empréstimos
 // Suba a versão do cache sempre que publicar uma alteração no app,
 // para forçar o navegador a buscar os arquivos novos.
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `emprestimos-${CACHE_VERSION}`;
 
 // Arquivos do próprio app (mesma origem)
