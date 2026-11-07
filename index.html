@@ -116,7 +116,10 @@ dialog h3{margin:0 0 12px;font-size:15px}
 .act .btn{width:100%;padding:13px;font-size:15px;justify-content:center}
 .rec{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rec .btn{padding:6px 10px;font-size:12px}
 .warn{background:var(--wrbg);color:var(--wr);border-radius:8px;padding:8px 10px;font-size:12px}
-#toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:9px 16px;border-radius:8px;display:none;z-index:30;font-size:13px;max-width:88vw;text-align:center}
+#toast{position:fixed;inset:auto auto 76px 50%;margin:0;border:none;overflow:visible;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;max-width:88vw;text-align:center}
+.icon-sm{width:30px;height:30px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--pri);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;padding:0}
+.btn.dng{background:var(--er);border-color:var(--er);color:#fff}
+.danger{border-color:var(--er)}.danger h3{color:var(--er)}
 #rep{position:fixed;left:-99999px;top:0;width:1100px;background:#fff;color:#111;padding:28px;font:13px Arial,sans-serif}
 #rep table{width:100%;border-collapse:collapse;margin-top:10px}#rep th{background:#1f4fd8;color:#fff;text-align:left}#rep th,#rep td{padding:5px 7px;border:1px solid #d5dbe6;font-size:11px}
 </style></head><body>
@@ -150,7 +153,15 @@ dialog h3{margin:0 0 12px;font-size:15px}
 <div id="l_warn"></div>
 <div class="act"><button class="btn" onclick="$('#dl').close()">Cancelar</button><button class="btn p" id="l_save" onclick="saveLoan()">Criar carnê</button></div></form></dialog>
 
-<dialog id="dp"><form method="dialog" onsubmit="return false"><h3 id="p_t"></h3><div class="f">
+<dialog id="dp"><form method="dialog" onsubmit="return false"><h3 id="p_t"></h3>
+<div id="p_duebox" class="card" style="padding:12px;margin-bottom:12px">
+ <label style="display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:3px">Vencimento desta parcela
+  <input id="p_due" type="date" oninput="updDueInfo()" style="padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);font-size:14px"></label>
+ <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin:10px 0 6px"><input type="checkbox" id="p_seq" checked onchange="updDueInfo()" style="width:18px;height:18px"> Repetir esse dia nos meses seguintes</label>
+ <small id="p_seqinfo" style="display:block;color:var(--mut);font-size:11.5px;margin-bottom:10px"></small>
+ <button type="button" class="btn w" onclick="saveDue()">Salvar vencimento</button>
+</div>
+<div class="f">
 <label>Data em que foi paga<input id="p_date" type="date"></label>
 <label>Valor pago (R$)<input id="p_val" type="number" step="0.01"></label>
 <label>Meio de pagamento<select id="p_meth"></select></label>
@@ -164,7 +175,12 @@ dialog h3{margin:0 0 12px;font-size:15px}
  <button type="button" class="btn d" id="p_rm" style="display:none" onclick="rmReceipt()">Remover</button></div>
  <small id="p_recinfo" style="color:var(--mut)"></small></label></div>
 <div class="act"><button class="btn d" id="p_undo" onclick="undoPay()">Desfazer pagamento</button><button class="btn" onclick="$('#dp').close()">Cancelar</button><button class="btn p" onclick="doPay()">Marcar como paga</button></div></form></dialog>
-<div id="toast"></div><div id="rep"></div>
+<dialog id="dc"><form method="dialog" onsubmit="return false"><h3 id="c_t"></h3>
+<p id="c_p" style="margin:0 0 10px;color:var(--mut);font-size:13px"></p>
+<div id="c_inw" style="display:none"><label style="font-size:12px;color:var(--mut)">Digite <b id="c_word"></b> para confirmar
+<input id="c_in" autocomplete="off" style="width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);margin-top:4px;font-size:14px"></label></div>
+<div class="act"><button class="btn" id="c_no" type="button">Cancelar</button><button class="btn p" id="c_yes" type="button">Confirmar</button></div></form></dialog>
+<div id="toast" popover="manual" style="display:none"></div><div id="rep"></div>
 
 <script>
 const $=s=>document.querySelector(s);
@@ -231,7 +247,25 @@ const os=m=>db.transaction('loans',m).objectStore('loans');
 const dbPut=l=>rq(os('readwrite').put(l)),dbDel=id=>rq(os('readwrite').delete(id)),dbAll=()=>rq(os('readonly').getAll());
 async function reload(){loans=(await dbAll()).sort((a,b)=>a.created-b.created);if(sel!=='all'&&!loans.find(l=>l.id===sel))sel='all';render()}
 
-function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3200)}
+function hideToast(){const t=$('#toast');clearTimeout(t._h);try{t.hidePopover()}catch{}t.style.display='none'}
+function toast(m){
+  const t=$('#toast');t.textContent=m;t.style.display='block';
+  try{if(t.matches(':popover-open'))t.hidePopover();t.showPopover()}catch{}
+  clearTimeout(t._h);t._h=setTimeout(hideToast,3200);
+}
+function askConfirm({title,text,yes='Confirmar',danger=false,word=null}){
+  return new Promise(res=>{
+    const d=$('#dc'),y=$('#c_yes'),n=$('#c_no');
+    $('#c_t').textContent=title;$('#c_p').textContent=text;
+    $('#c_inw').style.display=word?'block':'none';$('#c_word').textContent=word||'';$('#c_in').value='';
+    y.textContent=yes;y.className='btn '+(danger?'dng':'p');
+    const done=v=>{d.onclose=null;d.close();y.onclick=n.onclick=null;res(v)};
+    y.onclick=()=>{if(word&&$('#c_in').value.trim().toUpperCase()!==word)return toast('Digite '+word+' para confirmar');done(true)};
+    n.onclick=()=>done(false);
+    d.onclose=()=>done(false);
+    d.showModal();
+  });
+}
 function save(filename,data){
   const MIME={xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pdf:'application/pdf',png:'image/png',json:'application/json'};
   const ext=filename.split('.').pop().toLowerCase();
@@ -249,7 +283,7 @@ const loanStatusLabel={ok:'Ativo',wr:'Em atraso',mu:'Quitado'};
 function nextParcel(l){return l.parcels.find(p=>!p.paid)}
 
 // ---------- tabs ----------
-function setTab(t){tab=t;$('#toast').style.display='none';render();window.scrollTo({top:0,behavior:'instant'})}
+function setTab(t){tab=t;hideToast();render();window.scrollTo({top:0,behavior:'instant'})}
 
 // ---------- render dispatch ----------
 function render(){
@@ -305,7 +339,7 @@ function loanSummaryCard(l,detailed){
     <div class="loan-val">${brl(s.total)}</div>
     <div class="progr"><span>Pagas: ${s.nPaid} de ${s.n}</span></div>
     <div class="progr"><div class="bar"><i style="width:${pct}%"></i></div><span>${pct}%</span></div></div>
-   <div class="loan-r">${nx?`Próxima parcela<br><b>${fd(nx.due)}</b>${brl(nx.value)}`:'Quitado'}<div class="chev" style="margin-top:6px">${ic('chevr',15)}</div></div>
+   <div class="loan-r">${nx?`Próxima parcela<br><b>${fd(nx.due)}</b>${brl(nx.value)}`:'Quitado'}<div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end;align-items:center"><button class="icon-sm" aria-label="Editar empréstimo" onclick="event.stopPropagation();editLoan('${l.id}')">${ic('edit',14)}</button><span class="chev">${ic('chevr',15)}</span></div></div>
   </div>${detailed&&expanded[l.id]?loanDetail(l):''}</div>`;
 }
 function goLoan(id){focusLoan=id;setTab('emprestimos')}
@@ -364,9 +398,35 @@ function renderConfig(v){
     <button class="btn w" onclick="$('#imp2').click()">${ic('up',16)} Importar backup</button>
     <input type="file" id="imp2" accept=".json" hidden>
    </div></div>
+  <div class="card confp danger" style="margin-top:10px"><h3>Zona de perigo</h3><p>Ações irreversíveis. Baixe um backup antes de continuar.</p>
+   <div style="display:flex;flex-direction:column;gap:9px">
+    <button class="btn w d" onclick="wipeReceipts()">${ic('trash',16)} Apagar todos os comprovantes</button>
+    <button class="btn w d" onclick="resetPayments()">${ic('trash',16)} Zerar todos os pagamentos</button>
+    <button class="btn w dng" onclick="wipeAll()">${ic('trash',16)} Apagar tudo</button>
+   </div></div>
   <div class="card confp" style="margin-top:10px"><h3>Sobre</h3><p>Controle de Empréstimos · dados 100% locais, nenhuma informação é enviada para servidores.</p></div>
   </div>`;
   $('#imp2').onchange=importBackup;
+}
+async function wipeReceipts(){
+  const n=loans.flatMap(l=>l.parcels).filter(p=>p.receipt).length;
+  if(!n)return toast('Nenhum comprovante anexado');
+  if(!await askConfirm({title:'Apagar comprovantes',text:`${n} comprovante(s) serão removidos. Os pagamentos registrados continuam.`,yes:'Apagar',danger:true}))return;
+  for(const l of loans){let ch=false;l.parcels.forEach(p=>{if(p.receipt){delete p.receipt;delete p.receiptName;delete p.receiptType;ch=true}});if(ch)await dbPut(l)}
+  await reload();toast('Comprovantes apagados');
+}
+async function resetPayments(){
+  const n=loans.flatMap(l=>l.parcels).filter(p=>p.paid).length;
+  if(!n)return toast('Nenhuma parcela paga para zerar');
+  if(!await askConfirm({title:'Zerar pagamentos',text:`${n} parcela(s) voltam para "a pagar" e os comprovantes e dados de pagamento são apagados. Os empréstimos continuam cadastrados.`,yes:'Zerar',danger:true}))return;
+  for(const l of loans){l.parcels=l.parcels.map(p=>({due:p.due,value:p.value,paid:false}));await dbPut(l)}
+  await reload();toast('Pagamentos zerados');
+}
+async function wipeAll(){
+  if(!loans.length)return toast('Não há dados para apagar');
+  if(!await askConfirm({title:'Apagar tudo',text:`Todos os ${loans.length} empréstimo(s), pagamentos e comprovantes deste aparelho serão apagados para sempre.`,yes:'Apagar tudo',danger:true,word:'APAGAR'}))return;
+  await rq(os('readwrite').clear());sel='all';expanded={};focusLoan=null;
+  await reload();toast('Todos os dados foram apagados');
 }
 
 // ---------- empréstimo ----------
@@ -393,16 +453,28 @@ async function saveLoan(){
   }
   const l=loans.find(x=>x.id===editId),paidCount=l.parcels.filter(p=>p.paid).length;
   if(n<paidCount)return toast(`Não é possível ter menos parcelas que as ${paidCount} já pagas`);
-  const parcels=Array.from({length:n},(_,i)=>{const old=l.parcels[i];if(old&&old.paid)return old;return{due:dueOf(due,i),value:val,paid:false}});
+  // Só recalcula datas/valores se você mudou o campo; senão preserva os vencimentos ajustados.
+  const firstDueChanged=due!==l.parcels[0]?.due,valChanged=val!==l.parcels[0]?.value,oldN=l.parcels.length,lastDue=l.parcels[oldN-1].due;
+  const parcels=Array.from({length:n},(_,i)=>{
+    const old=l.parcels[i];
+    if(old&&old.paid)return old;
+    if(old)return{...old,due:firstDueChanged?dueOf(due,i):old.due,value:valChanged?val:old.value};
+    return{due:firstDueChanged?dueOf(due,i):dueOf(lastDue,i-(oldN-1)),value:val,paid:false};
+  });
   Object.assign(l,meta);l.parcels=parcels;
   await dbPut(l);editId=null;$('#dl').close();reload();
 }
-async function delLoan(id){if(!confirm('Excluir este empréstimo e todo o histórico de pagamentos?'))return;await dbDel(id);reload()}
+async function delLoan(id){
+  const l=loans.find(x=>x.id===id);
+  if(!await askConfirm({title:'Excluir empréstimo',text:`"${l?.name||''}" e todo o histórico de pagamentos e comprovantes serão apagados. Não dá para desfazer.`,yes:'Excluir',danger:true}))return;
+  await dbDel(id);reload();toast('Empréstimo excluído');
+}
 
 // ---------- pagamento ----------
 function openPay(id,i){
   const l=loans.find(x=>x.id===id),p=l.parcels[i];cur={id,i};pendingRemoved=false;
   $('#p_t').textContent=`${l.name} — parcela ${i+1}/${l.parcels.length} (venc. ${fd(p.due)})`;
+  $('#p_due').value=p.due;$('#p_seq').checked=true;$('#p_duebox').style.display=p.paid?'none':'block';updDueInfo();
   $('#p_date').value=p.paidDate||today();$('#p_val').value=p.paidValue??p.value;
   $('#p_meth').value=p.method||l.method;$('#p_acc').value=p.account??l.account;$('#p_rec').value=p.recipient??l.recipient;$('#p_obs').value=p.note||'';
   $('#p_hint').textContent=(!p.paid&&p.due<today())?`Parcela vencida em ${fd(p.due)}. Informe a data em que o pagamento foi realmente feito.`:'Você pode informar uma data diferente do vencimento.';
@@ -416,6 +488,7 @@ function rmReceipt(){pendingRemoved=true;$('#p_view').style.display='none';$('#p
 async function doPay(){
   const l=loans.find(x=>x.id===cur.id),p=l.parcels[cur.i];
   if(!$('#p_date').value)return toast('Informe a data do pagamento');
+  const nd=$('#p_due').value;if(!p.paid&&nd&&nd!==p.due)applyDue(l,cur.i,nd,$('#p_seq').checked);
   const f=$('#p_file').files[0];
   if(f&&f.size>15*1024*1024)return toast('Comprovante muito grande (máx. 15 MB)');
   Object.assign(p,{paid:true,paidDate:$('#p_date').value,paidValue:+$('#p_val').value||p.value,method:$('#p_meth').value,account:$('#p_acc').value.trim(),recipient:$('#p_rec').value.trim(),note:$('#p_obs').value.trim()});
@@ -427,6 +500,30 @@ async function undoPay(){
   const l=loans.find(x=>x.id===cur.id),p=l.parcels[cur.i],keep={};
   if(p.receipt)Object.assign(keep,{receipt:p.receipt,receiptName:p.receiptName,receiptType:p.receiptType});
   l.parcels[cur.i]={due:p.due,value:p.value,paid:false,...keep};await dbPut(l);$('#dp').close();reload()
+}
+
+// ---------- vencimento: editar e repetir nos meses seguintes ----------
+// A data de cada parcela seguinte é calculada a partir da data nova (mesmo dia,
+// mês a mês). Em meses curtos o dia é ajustado (31 -> 28/29/30) sem "derivar".
+function applyDue(l,i,newDue,seq){
+  l.parcels[i].due=newDue;
+  if(seq)for(let j=i+1;j<l.parcels.length;j++)if(!l.parcels[j].paid)l.parcels[j].due=dueOf(newDue,j-i);
+}
+function updDueInfo(){
+  const l=loans.find(x=>x.id===cur.id),i=cur.i,nd=$('#p_due').value,box=$('#p_seqinfo');
+  if(!nd){box.textContent='';return}
+  if(!$('#p_seq').checked){box.textContent=`Só a parcela ${i+1} muda para ${fd(nd)}.`;return}
+  let last=i;for(let j=i+1;j<l.parcels.length;j++)if(!l.parcels[j].paid)last=j;
+  box.textContent=last===i
+    ?`Só a parcela ${i+1} muda (não há parcelas em aberto depois dela).`
+    :`Parcelas ${i+1} a ${last+1}: de ${fd(nd)} até ${fd(dueOf(nd,last-i))}, sempre no dia ${nd.slice(8)}.`;
+}
+async function saveDue(){
+  const l=loans.find(x=>x.id===cur.id),p=l.parcels[cur.i],nd=$('#p_due').value;
+  if(!nd)return toast('Informe a nova data de vencimento');
+  if(nd===p.due)return toast('O vencimento não mudou');
+  applyDue(l,cur.i,nd,$('#p_seq').checked);
+  await dbPut(l);$('#dp').close();reload();toast('Vencimento atualizado');
 }
 
 // ---------- relatório ----------
@@ -473,7 +570,7 @@ async function backup(){
 async function importBackup(e){
   const f=e.target.files[0];e.target.value='';if(!f)return;
   try{const j=JSON.parse(await f.text());if(!Array.isArray(j.loans)||j.loans.some(l=>!l.id||!Array.isArray(l.parcels)))throw 0;
-    if(!confirm(`Importar ${j.loans.length} empréstimo(s)? Registros com o mesmo ID serão sobrescritos.`))return;
+    if(!await askConfirm({title:'Importar backup',text:`Importar ${j.loans.length} empréstimo(s)? Registros com o mesmo ID serão sobrescritos.`,yes:'Importar'}))return;
     for(const l of j.loans){
       l.parcels=l.parcels.map(p=>{if(p.receiptB64){const{receiptB64,...rest}=p;return{...rest,receipt:b64ToBlob(receiptB64,p.receiptType||'application/octet-stream')}}return p});
       await dbPut(l);
