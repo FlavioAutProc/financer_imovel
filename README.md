@@ -5,6 +5,13 @@ com painel de dívida, anexo de comprovantes e exportação para XLSX/PDF/imagem
 Todos os dados ficam salvos no IndexedDB **do próprio aparelho** — nada é
 enviado para servidor nenhum.
 
+## Desktop e celular
+
+O mesmo arquivo atende os dois: abaixo de 900px de largura o app usa o layout
+de celular (abas na parte de baixo); a partir de 900px vira layout de desktop
+(menu lateral, painel em 4 colunas, modais centralizados). Também dá para
+instalar no computador (Chrome/Edge: ícone de instalar na barra de endereço).
+
 ## Arquivos
 
 ```
